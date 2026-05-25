@@ -8,6 +8,7 @@
 ## Table of Contents
 
 ### React (Web)
+
 1. [Problem — useStack Hook](#1-problem--usestack-hook)
 2. [useStack Implementation](#2-usestack-implementation)
 3. [Two Instances of useStack in One File](#3-two-instances-of-usestack-in-one-file)
@@ -15,6 +16,7 @@
 5. [React Interview Points](#5-react-interview-points)
 
 ### React Native
+
 6. [RN Project Setup](#6-rn-project-setup)
 7. [Stack Navigator — Two Screens](#7-stack-navigator--two-screens)
 8. [Pass Params Between Screens](#8-pass-params-between-screens)
@@ -31,13 +33,13 @@
 
 **Requirements (typical interview):**
 
-| Feature | Behavior |
-|---------|----------|
-| `push(value)` | Add new state to history |
-| `undo()` | Go to previous state |
-| `redo()` | Go to next state (after undo) |
+| Feature               | Behavior                          |
+| --------------------- | --------------------------------- |
+| `push(value)`         | Add new state to history          |
+| `undo()`              | Go to previous state              |
+| `redo()`              | Go to next state (after undo)     |
 | `canUndo` / `canRedo` | Disable buttons when not possible |
-| Current value | What UI should display |
+| Current value         | What UI should display            |
 
 **Data structure (mental model):**
 
@@ -56,14 +58,31 @@ When user types something new after undo → **clear `future`**.
 ```tsx
 import { useCallback, useState } from "react";
 
+type SetStateAction<T> = T | ((prev: T) => T);
+
 type UseStackReturn<T> = {
   value: T;
-  set: (next: T) => void;       // push new state (clears redo)
+
+  // state operations
+  set: (next: SetStateAction<T>) => void;
+  reset: (initial: T) => void;
+
+  // undo/redo
   undo: () => void;
   redo: () => void;
+
+  // stack helpers
+  push: (item: T) => void;
+  pop: () => T | undefined;
+  peek: () => T;
+
+  // flags
   canUndo: boolean;
   canRedo: boolean;
-  reset: (initial: T) => void;
+
+  // debugging
+  past: T[];
+  future: T[];
 };
 
 export function useStack<T>(initialValue: T): UseStackReturn<T> {
@@ -71,42 +90,127 @@ export function useStack<T>(initialValue: T): UseStackReturn<T> {
   const [present, setPresent] = useState<T>(initialValue);
   const [future, setFuture] = useState<T[]>([]);
 
-  const set = useCallback((next: T) => {
-    setPast((p) => [...p, present]);
-    setPresent(next);
-    setFuture([]); // new edit clears redo branch
-  }, [present]);
+  // ------------------------------------
+  // SET VALUE
+  // ------------------------------------
+
+  const set = useCallback((next: SetStateAction<T>) => {
+    setPresent((current) => {
+      const updated =
+        typeof next === "function" ? (next as (prev: T) => T)(current) : next;
+
+      setPast((p) => [...p, current]);
+
+      // new change clears redo history
+      setFuture([]);
+
+      return updated;
+    });
+  }, []);
+
+  // ------------------------------------
+  // UNDO
+  // ------------------------------------
 
   const undo = useCallback(() => {
-    if (past.length === 0) return;
-    const previous = past[past.length - 1];
-    setPast((p) => p.slice(0, -1));
-    setFuture((f) => [present, ...f]);
-    setPresent(previous);
-  }, [past, present]);
+    setPast((p) => {
+      if (p.length === 0) return p;
+
+      const previous = p[p.length - 1];
+
+      setPresent((current) => {
+        setFuture((f) => [current, ...f]);
+
+        return previous;
+      });
+
+      return p.slice(0, -1);
+    });
+  }, []);
+
+  // ------------------------------------
+  // REDO
+  // ------------------------------------
 
   const redo = useCallback(() => {
-    if (future.length === 0) return;
-    const next = future[0];
-    setFuture((f) => f.slice(1));
-    setPast((p) => [...p, present]);
-    setPresent(next);
-  }, [future, present]);
+    setFuture((f) => {
+      if (f.length === 0) return f;
+
+      const next = f[0];
+
+      setPresent((current) => {
+        setPast((p) => [...p, current]);
+
+        return next;
+      });
+
+      return f.slice(1);
+    });
+  }, []);
+
+  // ------------------------------------
+  // RESET
+  // ------------------------------------
 
   const reset = useCallback((initial: T) => {
     setPast([]);
-    setPresent(initial);
     setFuture([]);
+    setPresent(initial);
   }, []);
+
+  // ------------------------------------
+  // STACK OPERATIONS
+  // ------------------------------------
+
+  const push = useCallback(
+    (item: T) => {
+      set(item);
+    },
+    [set],
+  );
+
+  const pop = useCallback((): T | undefined => {
+    let removed: T | undefined;
+
+    setPast((p) => {
+      if (p.length === 0) return p;
+
+      removed = present;
+
+      const previous = p[p.length - 1];
+
+      setFuture((f) => [present, ...f]);
+
+      setPresent(previous);
+
+      return p.slice(0, -1);
+    });
+
+    return removed;
+  }, [present]);
+
+  const peek = useCallback(() => {
+    return present;
+  }, [present]);
 
   return {
     value: present,
+
     set,
+    reset,
+
     undo,
     redo,
+
+    push,
+    pop,
+    peek,
+
     canUndo: past.length > 0,
     canRedo: future.length > 0,
-    reset,
+
+    past,
+    future,
   };
 }
 ```
@@ -126,30 +230,66 @@ Each call to `useStack(initial)` creates **its own** `past`, `present`, `future`
 React does not share state between hook calls. Same as calling `useState()` twice gives two different counters.
 
 ```tsx
+import { useStack } from "./useStack";
+
 function App() {
-  const titleStack = useStack("");      // instance 1
-  const bodyStack = useStack("");       // instance 2 — completely separate
+  // Separate independent stacks
+  const titleStack = useStack<string>("");
+  const bodyStack = useStack<string>("");
 
   return (
-    <div>
-      <input
-        value={titleStack.value}
-        onChange={(e) => titleStack.set(e.target.value)}
-      />
-      <button onClick={titleStack.undo} disabled={!titleStack.canUndo}>
-        Undo Title
-      </button>
+    <div style={{ padding: "20px" }}>
+      {/* TITLE SECTION */}
+      <div>
+        <h2>Title</h2>
 
-      <textarea
-        value={bodyStack.value}
-        onChange={(e) => bodyStack.set(e.target.value)}
-      />
-      <button onClick={bodyStack.undo} disabled={!bodyStack.canUndo}>
-        Undo Body
-      </button>
+        <input
+          type="text"
+          value={titleStack.value}
+          onChange={(e) => titleStack.set(e.target.value)}
+          placeholder="Enter title"
+        />
+
+        <div>
+          <button onClick={titleStack.undo} disabled={!titleStack.canUndo}>
+            Undo
+          </button>
+
+          <button onClick={titleStack.redo} disabled={!titleStack.canRedo}>
+            Redo
+          </button>
+        </div>
+      </div>
+
+      <hr />
+
+      {/* BODY SECTION */}
+      <div>
+        <h2>Body</h2>
+
+        <textarea
+          value={bodyStack.value}
+          onChange={(e) => bodyStack.set(e.target.value)}
+          placeholder="Enter body"
+          rows={5}
+          cols={40}
+        />
+
+        <div>
+          <button onClick={bodyStack.undo} disabled={!bodyStack.canUndo}>
+            Undo
+          </button>
+
+          <button onClick={bodyStack.redo} disabled={!bodyStack.canRedo}>
+            Redo
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
+
+export default App;
 ```
 
 ### Interview answer (one line)
@@ -172,7 +312,7 @@ Use **one hook per independent undo history**.
 function useNamedStacks<T extends Record<string, string>>(initial: T) {
   const keys = Object.keys(initial) as (keyof T)[];
   const stacks = Object.fromEntries(
-    keys.map((key) => [key, useStack(initial[key])])
+    keys.map((key) => [key, useStack(initial[key])]),
   ) as { [K in keyof T]: ReturnType<typeof useStack<string>> };
   return stacks;
 }
@@ -241,13 +381,13 @@ src/
 
 ## 5. React Interview Points
 
-| Question | Answer |
-|----------|--------|
-| How does undo/redo work? | Two stacks: `past` + `future`, `present` in middle |
-| Why clear `future` on new `set`? | Standard editor behavior after new edit |
-| Two `useStack` in one file? | Each call = own state (separate hook instances) |
-| Why custom hook? | Reusable logic, testable, keeps UI thin |
-| `useCallback` deps? | Include `present`, `past`, `future` used in closure |
+| Question                         | Answer                                              |
+| -------------------------------- | --------------------------------------------------- |
+| How does undo/redo work?         | Two stacks: `past` + `future`, `present` in middle  |
+| Why clear `future` on new `set`? | Standard editor behavior after new edit             |
+| Two `useStack` in one file?      | Each call = own state (separate hook instances)     |
+| Why custom hook?                 | Reusable logic, testable, keeps UI thin             |
+| `useCallback` deps?              | Include `present`, `past`, `future` used in closure |
 
 ---
 
@@ -378,22 +518,22 @@ export default function DetailsScreen({ route, navigation }: Props) {
 
 ```tsx
 export type RootStackParamList = {
-  Home: undefined;                    // no params
+  Home: undefined; // no params
   Details: { userId: string; userName: string };
 };
 ```
 
 ### Other navigation methods
 
-| Method | Use case |
-|--------|----------|
-| `navigation.navigate("Screen", params)` | Go to screen; stays in stack |
-| `navigation.push("Screen", params)` | Push another instance (stack only) |
-| `navigation.replace("Screen", params)` | Replace current screen |
-| `navigation.goBack()` | Pop current screen |
-| `navigation.popToTop()` | Back to first screen in stack |
-| `navigation.setParams({ ... })` | Update params of **current** screen |
-| `navigation.reset({ ... })` | Reset entire navigation state |
+| Method                                  | Use case                            |
+| --------------------------------------- | ----------------------------------- |
+| `navigation.navigate("Screen", params)` | Go to screen; stays in stack        |
+| `navigation.push("Screen", params)`     | Push another instance (stack only)  |
+| `navigation.replace("Screen", params)`  | Replace current screen              |
+| `navigation.goBack()`                   | Pop current screen                  |
+| `navigation.popToTop()`                 | Back to first screen in stack       |
+| `navigation.setParams({ ... })`         | Update params of **current** screen |
+| `navigation.reset({ ... })`             | Reset entire navigation state       |
 
 ### Pass params back to previous screen (callback pattern)
 
@@ -417,41 +557,41 @@ navigation.goBack();
 
 ### Core packages (React Navigation v6+)
 
-| Package | Role |
-|---------|------|
-| `@react-navigation/native` | Core library — `NavigationContainer`, hooks, types |
-| `react-native-screens` | Native screen containers (performance) |
-| `react-native-safe-area-context` | Safe area insets (notch, status bar) |
+| Package                          | Role                                               |
+| -------------------------------- | -------------------------------------------------- |
+| `@react-navigation/native`       | Core library — `NavigationContainer`, hooks, types |
+| `react-native-screens`           | Native screen containers (performance)             |
+| `react-native-safe-area-context` | Safe area insets (notch, status bar)               |
 
 ### Navigators (install per pattern)
 
-| Package | Navigator | Use case |
-|---------|-----------|----------|
-| `@react-navigation/native-stack` | **Native Stack** | Most apps — iOS/Android native transitions, headers |
-| `@react-navigation/stack` | **JS Stack** | Custom card animations, older apps |
-| `@react-navigation/bottom-tabs` | **Bottom Tabs** | Main app sections (Home, Search, Profile) |
-| `@react-navigation/drawer` | **Drawer** | Side menu navigation |
-| `@react-navigation/material-top-tabs` | **Top Tabs** | Swipeable tabs under header |
-| `@react-navigation/material-bottom-tabs` | **Material Bottom** | Material Design bottom bar |
+| Package                                  | Navigator           | Use case                                            |
+| ---------------------------------------- | ------------------- | --------------------------------------------------- |
+| `@react-navigation/native-stack`         | **Native Stack**    | Most apps — iOS/Android native transitions, headers |
+| `@react-navigation/stack`                | **JS Stack**        | Custom card animations, older apps                  |
+| `@react-navigation/bottom-tabs`          | **Bottom Tabs**     | Main app sections (Home, Search, Profile)           |
+| `@react-navigation/drawer`               | **Drawer**          | Side menu navigation                                |
+| `@react-navigation/material-top-tabs`    | **Top Tabs**        | Swipeable tabs under header                         |
+| `@react-navigation/material-bottom-tabs` | **Material Bottom** | Material Design bottom bar                          |
 
 ### Feature comparison (interview table)
 
-| Navigator | Animation | Performance | Typical use |
-|-----------|-----------|-------------|-------------|
-| **Native Stack** | Native platform | Best | Login → Home → Detail flows |
-| **JS Stack** | JS-driven | Good | Heavy custom transitions |
-| **Bottom Tabs** | Tab switch | Good | 3–5 main sections |
-| **Drawer** | Slide menu | Good | Settings, many sections |
-| **Top Tabs** | Horizontal swipe | Good | Categories, feeds |
+| Navigator        | Animation        | Performance | Typical use                 |
+| ---------------- | ---------------- | ----------- | --------------------------- |
+| **Native Stack** | Native platform  | Best        | Login → Home → Detail flows |
+| **JS Stack**     | JS-driven        | Good        | Heavy custom transitions    |
+| **Bottom Tabs**  | Tab switch       | Good        | 3–5 main sections           |
+| **Drawer**       | Slide menu       | Good        | Settings, many sections     |
+| **Top Tabs**     | Horizontal swipe | Good        | Categories, feeds           |
 
 ### Supporting libraries
 
-| Package | Purpose |
-|---------|---------|
-| `react-native-gesture-handler` | Gestures for drawer, stack swipe-back |
-| `react-native-reanimated` | Smooth animations (drawer, tabs) |
-| `@react-navigation/elements` | Shared header UI helpers |
-| `expo-router` (Expo) | File-based routing on top of React Navigation |
+| Package                        | Purpose                                       |
+| ------------------------------ | --------------------------------------------- |
+| `react-native-gesture-handler` | Gestures for drawer, stack swipe-back         |
+| `react-native-reanimated`      | Smooth animations (drawer, tabs)              |
+| `@react-navigation/elements`   | Shared header UI helpers                      |
+| `expo-router` (Expo)           | File-based routing on top of React Navigation |
 
 ### When to use what
 
@@ -466,37 +606,37 @@ Deep linking / web URLs       → NavigationContainer linking config
 
 ### Expo Router vs React Navigation
 
-| | React Navigation | Expo Router |
-|--|------------------|-------------|
-| Routing | Code-based (`Stack.Screen`) | File-based (`app/home.tsx`) |
-| Best for | Custom control, any RN project | Expo projects, web + mobile |
-| Under the hood | Standalone | Built on React Navigation |
+|                | React Navigation               | Expo Router                 |
+| -------------- | ------------------------------ | --------------------------- |
+| Routing        | Code-based (`Stack.Screen`)    | File-based (`app/home.tsx`) |
+| Best for       | Custom control, any RN project | Expo projects, web + mobile |
+| Under the hood | Standalone                     | Built on React Navigation   |
 
 ---
 
 ## 10. Navigation Interview Questions
 
-| Question | Short answer |
-|----------|--------------|
-| How to pass data between screens? | `navigation.navigate("Screen", { params })` → `route.params` |
-| Type-safe navigation? | `RootStackParamList` + `NativeStackScreenProps` |
-| Difference `navigate` vs `push`? | `navigate` reuses existing screen if on stack; `push` always adds |
-| Native Stack vs JS Stack? | Native = platform animations; JS = customizable card stack |
-| What wraps the app? | `NavigationContainer` |
-| Nested navigation? | Tab navigator → each tab has its own Stack |
-| Deep linking? | `linking` prop on `NavigationContainer` |
-| Hardware back (Android)? | Handled by stack; `beforeRemove` listener to confirm exit |
-| Required peer deps? | `screens`, `safe-area-context`, often `gesture-handler` |
+| Question                          | Short answer                                                      |
+| --------------------------------- | ----------------------------------------------------------------- |
+| How to pass data between screens? | `navigation.navigate("Screen", { params })` → `route.params`      |
+| Type-safe navigation?             | `RootStackParamList` + `NativeStackScreenProps`                   |
+| Difference `navigate` vs `push`?  | `navigate` reuses existing screen if on stack; `push` always adds |
+| Native Stack vs JS Stack?         | Native = platform animations; JS = customizable card stack        |
+| What wraps the app?               | `NavigationContainer`                                             |
+| Nested navigation?                | Tab navigator → each tab has its own Stack                        |
+| Deep linking?                     | `linking` prop on `NavigationContainer`                           |
+| Hardware back (Android)?          | Handled by stack; `beforeRemove` listener to confirm exit         |
+| Required peer deps?               | `screens`, `safe-area-context`, often `gesture-handler`           |
 
 ### Common machine coding checklist (RN)
 
-- [ ] `NavigationContainer` at root  
-- [ ] Typed `ParamList`  
-- [ ] Two screens in Stack  
-- [ ] Navigate with params  
-- [ ] Display params on second screen  
-- [ ] `goBack()` works  
-- [ ] Mention package names and why Native Stack  
+- [ ] `NavigationContainer` at root
+- [ ] Typed `ParamList`
+- [ ] Two screens in Stack
+- [ ] Navigate with params
+- [ ] Display params on second screen
+- [ ] `goBack()` works
+- [ ] Mention package names and why Native Stack
 
 ---
 
@@ -517,4 +657,4 @@ React Native:
 
 ---
 
-*End of Day 1 machine coding*
+_End of Day 1 machine coding_
