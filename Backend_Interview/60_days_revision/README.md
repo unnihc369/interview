@@ -10,6 +10,24 @@ Structured like `Frontend_Interview/60_days_revision` — one folder per day, se
 | [day_1/day1_concepts.md](day_1/day1_concepts.md) | OOP (classes, inheritance, polymorphism) · SOLID (SRP, OCP) |
 | [day_1/day1_spring_boot.md](day_1/day1_spring_boot.md) | First REST controller · `@RestController` · `@GetMapping` |
 
+## Day 2
+
+| File | Topics |
+|------|--------|
+| [day_2/day2_leetcode.md](day_2/day2_leetcode.md) | Arrays patterns (stock, max subarray, missing number, etc.) |
+| [day_2/day2_java.md](day_2/day2_java.md) | OOP concepts (abstraction and interfaces) |
+| [day_2/day2_spring_boot.md](day_2/day2_spring_boot.md) | Dependency Injection concepts |
+| [day_2/day2_lld.md](day_2/day2_lld.md) | SOLID (LSP, ISP, DIP) |
+
+## Day 4
+
+| File | Topics |
+|------|--------|
+| [day_4/day4_leetcode.md](day_4/day4_leetcode.md) | 3Sum · Container With Most Water · Search in Rotated Sorted Array |
+| [day_4/day4_java.md](day_4/day4_java.md) | Generics · Comparable vs Comparator |
+| [day_4/day4_spring_boot.md](day_4/day4_spring_boot.md) | REST API design: `@PostMapping`, `@PutMapping`, `@DeleteMapping`, path variables |
+| [day_4/day4_lld.md](day_4/day4_lld.md) | UML basics: class diagrams, sequence diagrams |
+
 ## Deep-dive docs (existing)
 
 | Path | Content |
@@ -21,4 +39,4 @@ Structured like `Frontend_Interview/60_days_revision` — one folder per day, se
 
 ---
 
-*Add `day_2/`, `day_3/`, … as you progress.*
+*Add `day_3/`, `day_5/`, … as you progress.*
