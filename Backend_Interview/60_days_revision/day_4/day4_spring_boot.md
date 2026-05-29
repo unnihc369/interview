@@ -285,6 +285,42 @@ Operation succeeded, no response body needed.
 
 ---
 
+## Q6. REST API versioning strategies?
+
+| Strategy | Example | Pros / Cons |
+|----------|---------|-------------|
+| URI path | `/api/v1/users` | Simple, visible — most common |
+| Header | `Accept: application/vnd.myapp.v2+json` | Clean URLs — harder to test |
+| Query param | `/users?version=2` | Easy but messy |
+| Content negotiation | Same URL, different Accept header | Rare in practice |
+
+**Recommendation for SDE interviews:** URI versioning (`/api/v1/`) + backward-compatible changes when possible.
+
+---
+
+## Q7. HTTP status codes — full guide?
+
+| Code | When to use |
+|------|-------------|
+| 200 OK | Successful GET/PUT/PATCH with body |
+| 201 Created | POST created resource |
+| 204 No Content | DELETE success, PUT with no body |
+| 400 Bad Request | Validation failure, malformed JSON |
+| 401 Unauthorized | Not authenticated (missing/invalid token) |
+| 403 Forbidden | Authenticated but no permission |
+| 404 Not Found | Resource doesn't exist |
+| 409 Conflict | Duplicate email, version conflict |
+| 422 Unprocessable Entity | Semantic validation (optional) |
+| 429 Too Many Requests | Rate limited |
+| 500 Internal Server Error | Unhandled exception |
+
+```java
+return ResponseEntity.status(HttpStatus.CONFLICT)
+    .body(new ErrorResponse("Email already exists"));
+```
+
+---
+
 # One-Line Revision
 
 ```text

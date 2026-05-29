@@ -185,36 +185,6 @@ Destroy Method
 
 ---
 
-# Frequently Asked Interview Questions
-
-## Why Constructor Injection Preferred?
-
-- Mandatory dependencies
-- Better design
-- Easier testing
-
----
-
-## What is IOC?
-
-Control transferred from programmer to framework.
-
----
-
-## Difference Between Bean and Object
-
-| Object           | Bean              |
-| ---------------- | ----------------- |
-| Created manually | Managed by Spring |
-
----
-
-## What Happens When @Autowired Used?
-
-Spring searches matching bean and injects it.
-
----
-
 # Real Interview Example
 
 ```java
@@ -246,3 +216,114 @@ Injects Dependencies
 ↓
 Application Ready
 ```
+
+---
+
+# Bean Scopes (Interview Critical)
+
+| Scope | Lifecycle | Use case |
+|-------|-----------|----------|
+| **singleton** (default) | One instance per Spring container | Services, repositories |
+| **prototype** | New instance every injection/getBean | Stateful objects |
+| **request** | One per HTTP request (web apps) | Request-scoped DTOs |
+| **session** | One per HTTP session | Shopping cart |
+
+```java
+@Service
+@Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+public class ReportGenerator { }
+```
+
+**Singleton + Prototype trap:** Injecting prototype into singleton gives one prototype instance — use `ObjectProvider<ReportGenerator>` for fresh instance per call.
+
+---
+
+# @Qualifier — Multiple Implementations
+
+```java
+@Service
+public class PaymentService {
+    public PaymentService(@Qualifier("stripeGateway") PaymentGateway gateway) { }
+}
+```
+
+Without `@Qualifier` when multiple beans exist → `NoUniqueBeanDefinitionException`.
+
+---
+
+# @Repository vs @Service vs @Controller
+
+| Annotation | Purpose |
+|------------|---------|
+| `@Repository` | DB layer — **translates SQLException → DataAccessException** |
+| `@Service` | Business logic (semantic @Component) |
+| `@RestController` | REST API — `@Controller` + `@ResponseBody` |
+
+---
+
+# Spring MVC Request Lifecycle
+
+```text
+HTTP Request → Filter chain → DispatcherServlet
+  → HandlerMapping → Controller method
+  → HttpMessageConverter (JSON) → Response
+```
+
+**Full details:** [supplements/sde1_spring_mvc_aop.md](supplements/sde1_spring_mvc_aop.md) — AOP, Filter vs Interceptor, CORS, multipart upload.
+
+---
+
+# Frequently Asked Interview Questions
+
+## Why Constructor Injection Preferred?
+
+- Mandatory dependencies
+- Better design
+- Easier testing
+
+---
+
+## What is IOC?
+
+Control transferred from programmer to framework.
+
+---
+
+## Difference Between Bean and Object
+
+| Object | Bean |
+|--------|------|
+| Created manually | Managed by Spring |
+
+---
+
+## What Happens When @Autowired Used?
+
+Spring searches matching bean and injects it.
+
+---
+
+## Default bean scope?
+
+**Singleton** — one instance per IoC container.
+
+---
+
+## Difference between @Component and @Repository?
+
+`@Repository` adds **exception translation** for persistence layer — SQLException becomes Spring `DataAccessException`.
+
+---
+
+# One-Line Revision
+
+```text
+DI = inject dependencies; prefer constructor injection.
+Bean scopes: singleton (default), prototype, request, session.
+@Qualifier resolves multiple beans of same type.
+MVC: Filter → DispatcherServlet → Controller → JSON response.
+```
+
+---
+
+*End of Day 2 Spring Boot*
