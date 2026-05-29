@@ -391,6 +391,29 @@ src/
 
 ---
 
+## 5b. React Fundamentals (Interview Must-Know)
+
+Deep dive: [supplements/sde1_react_internals_patterns.md](../supplements/sde1_react_internals_patterns.md)
+
+| Topic | Quick answer |
+|-------|--------------|
+| **Rules of hooks** | Top level only; only in React functions |
+| **`key` prop** | Stable unique id for lists — never index on reorder |
+| **Controlled input** | `value` + `onChange` from React state |
+| **Reconciliation** | Diff VDOM → minimal DOM updates |
+| **Error Boundary** | Catches render errors in children (class or lib) |
+| **Context vs props** | Context for deep shared state; see [state management supplement](../supplements/sde1_state_management.md) |
+
+```tsx
+// Rules of hooks — condition INSIDE effect, not around hook
+useEffect(() => {
+  if (!enabled) return;
+  // ...
+}, [enabled]);
+```
+
+---
+
 # Part B — React Native
 
 ## 6. RN Project Setup
