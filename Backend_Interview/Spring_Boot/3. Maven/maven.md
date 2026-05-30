@@ -1,706 +1,541 @@
-# Maven — Complete Interview Guide
+# Maven — Spring Boot Build Tool Guide
+
+**Audience:** SDE 1–2 backend interviews · Spring Boot developers  
+**Goal:** Understand Maven project layout, lifecycle, dependencies, and how Spring Boot packages executable JARs.
+
+---
+
+## How to Read This Guide
+
+| If you are… | Start here | Time |
+|-------------|------------|------|
+| **New to Maven** | §1 → §3 → §4 → §5 (basics + lifecycle) | ~45 min |
+| **Interview cram** | §5 lifecycle + §7 Spring Boot + §9 Q&A | ~30 min |
+| **Deploying to Nexus** | §6 deploy phase + `settings.xml` | ~15 min |
+
+**Mental model:** `pom.xml` declares project + dependencies → Maven lifecycle runs phases → plugins produce JAR/WAR in `target/`.
+
+---
 
 ## Table of Contents
 
 1. [What is Maven?](#1-what-is-maven)
-2. [Why Maven Came Into Picture (ANT vs Maven)](#2-why-maven-came-into-picture-ant-vs-maven)
-3. [Maven Project Structure](#3-maven-project-structure)
-4. [What is pom.xml?](#4-what-is-pomxml)
-5. [Important Elements in pom.xml](#5-important-elements-in-pomxml)
-6. [Parent POM & Super POM](#6-parent-pom--super-pom)
-7. [Maven Repositories](#7-maven-repositories)
-8. [Maven Build Lifecycle](#8-maven-build-lifecycle)
-9. [Maven Plugins](#9-maven-plugins)
-10. [Goals](#10-goals)
-11. [Build Section](#11-build-section)
-12. [Common Maven Plugins](#12-common-maven-plugins)
-13. [Dependency Scopes](#13-dependency-scopes)
-14. [Maven Commands](#14-maven-commands)
-15. [Clean Lifecycle](#15-clean-lifecycle)
-16. [Maven Dependency Tree](#16-maven-dependency-tree)
-17. [SNAPSHOT vs Release Version](#17-snapshot-vs-release-version)
-18. [Maven vs Gradle](#18-maven-vs-gradle)
-19. [Spring Boot Maven Plugin](#19-spring-boot-maven-plugin)
-20. [Advanced Topics](#20-advanced-topics)
-21. [Final Mental Model](#21-final-mental-model)
-22. [Interview Questions Index](#22-interview-questions-index)
+2. [Typical Spring Boot Maven Project Structure](#2-typical-spring-boot-maven-project-structure)
+3. [pom.xml Essentials](#3-pomxml-essentials)
+4. [settings.xml & Repositories](#4-settingsxml--repositories)
+5. [Maven Lifecycle](#5-maven-lifecycle)
+6. [Deploy Phase Deep Dive](#6-deploy-phase-deep-dive)
+7. [Dependencies & Scopes](#7-dependencies--scopes)
+8. [Spring Boot Maven Specifics](#8-spring-boot-maven-specifics)
+9. [Interview Questions & Answers](#9-interview-questions--answers)
 
 ---
 
 ## 1. What is Maven?
 
-### Definition
+**Maven** is a **build automation and dependency management** tool for Java projects.
 
-**Maven** is a **Project Management + Build Automation Tool** used mainly in Java and Spring Boot projects.
+| Without Maven | With Maven |
+|---------------|------------|
+| Manually download JARs | Dependencies declared in `pom.xml`; Maven fetches them |
+| Custom build scripts (Ant) | Standard lifecycle: `compile`, `test`, `package`, `install`, `deploy` |
+| Inconsistent project layout | Convention over configuration (`src/main/java`, `src/test/java`) |
+| Version conflicts by hand | Transitive dependency resolution + nearest-wins strategy |
 
-### What Maven Actually Does
-
-| Feature | Purpose |
-|---------|---------|
-| Build generation | Compile / package code |
-| Dependency management | Download libraries automatically |
-| Project structure | Standard folder structure |
-| Testing | Run unit tests |
-| Packaging | Generate JAR / WAR |
-| Deployment | Deploy artifacts |
-| Documentation | Generate docs |
-| Plugin system | Extend functionality |
+**Maven vs Ant:** Ant uses imperative XML tasks (copy, compile, jar) with no built-in dependency management. Maven is **declarative** — you describe *what* the project is; Maven knows *how* to build it.
 
 ---
 
-## 2. Why Maven Came Into Picture (ANT vs Maven)
+## 2. Typical Spring Boot Maven Project Structure
 
-Before Maven, **ANT** was popular.
+```text
+learningspringboot/
+├── .mvn/                          # Maven Wrapper config
+│   └── wrapper/
+├── mvnw                           # Unix wrapper script
+├── mvnw.cmd                       # Windows wrapper script
+├── pom.xml                        # Project Object Model (heart of Maven)
+│
+├── src/
+│   ├── main/
+│   │   ├── java/
+│   │   │   └── com/company/learningspringboot/
+│   │   │       ├── LearningspringbootApplication.java
+│   │   │       ├── controller/    # HTTP layer
+│   │   │       ├── service/       # Business logic
+│   │   │       ├── repository/    # Data access
+│   │   │       ├── entity/        # JPA / DB mapping
+│   │   │       ├── dto/           # Request/response objects
+│   │   │       ├── config/        # @Configuration classes
+│   │   │       └── exception/     # Custom exceptions + handlers
+│   │   │
+│   │   └── resources/
+│   │       ├── application.properties   # or application.yml
+│   │       ├── static/                  # CSS, JS, images
+│   │       └── templates/               # Thymeleaf (if used)
+│   │
+│   └── test/
+│       ├── java/
+│       │   └── com/company/learningspringboot/
+│       │       └── LearningspringbootApplicationTests.java
+│       └── resources/             # Test-specific config
+│
+└── target/                        # Build output (generated — do not commit)
+    ├── classes/
+    ├── test-classes/
+    └── learningspringboot-0.0.1-SNAPSHOT.jar
+```
 
-### Problem in ANT
+### Layer Responsibilities
 
-In ANT you had to specify both **WHAT** to do and **HOW** to do it.
+| Layer | Package | Responsibility |
+|-------|---------|----------------|
+| **Controller** | `controller/` | Handles HTTP requests, validates input, returns responses |
+| **Service** | `service/` | Business logic, transactions, orchestration |
+| **Repository** | `repository/` | Database access (Spring Data JPA interfaces) |
+| **Entity** | `entity/` | Maps to database tables (`@Entity`) |
+| **DTO** | `dto/` | Data transfer objects for API request/response (decouple API from DB) |
+
+> **Note:** Layer folders live **inside the base package** (`com.company.learningspringboot`), not directly under `src/main/java`. See [Project File & Folder Structure](../2.%20Create_Project/Project_File_Folder_Structure.md) for a full layered example.
+
+---
+
+## 3. pom.xml Essentials
+
+**POM (Project Object Model)** is the XML file Maven reads to build your project.
 
 ```xml
-<javac srcdir="src" destdir="classes"/>
-```
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
 
-You manually specify: compile command, directories, and every build step.
+    <!-- Inherit Spring Boot defaults (Java version, dependency versions, plugins) -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.0</version>
+        <relativePath/>
+    </parent>
 
-### Maven Solves This
+    <!-- Project coordinates — unique identity in Maven repos -->
+    <groupId>com.company</groupId>           <!-- Organization / company -->
+    <artifactId>learningspringboot</artifactId> <!-- Project name -->
+    <version>0.0.1-SNAPSHOT</version>          <!-- SNAPSHOT = dev; RELEASE = stable -->
+    <packaging>jar</packaging>                 <!-- jar (default) or war -->
 
-```bash
-mvn compile
-```
+    <properties>
+        <java.version>21</java.version>
+    </properties>
 
-You only tell **WHAT** to do. Maven already knows **HOW** (via plugins and goals).
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
 
-### ANT vs Maven
-
-| ANT | Maven |
-|-----|-------|
-| Procedural | Convention based |
-| Need to define steps | Standard lifecycle |
-| No dependency management | Strong dependency management |
-| Flexible but verbose | Easy and structured |
-| Need WHAT + HOW | Only WHAT |
-
----
-
-## 3. Maven Project Structure
-
-Standard Maven structure:
-
-```
-project/
- ├── pom.xml
- ├── src/
- │   ├── main/
- │   │   ├── java/
- │   │   └── resources/
- │   └── test/
- │       ├── java/
- │       └── resources/
- └── target/
-```
-
-### Important Folders
-
-| Folder | Purpose |
-|--------|---------|
-| `src/main/java` | Main source code |
-| `src/main/resources` | Properties / config files |
-| `src/test/java` | Unit tests |
-| `target/` | Generated build output |
-
-### What is the `target` folder?
-
-Generated build output after `mvn compile` or `mvn package`:
-
-- `.class` files
-- `.jar` / `.war` artifacts
-- Temporary build files
-
----
-
-## 4. What is pom.xml?
-
-### Definition
-
-**POM = Project Object Model** — the heart of Maven.
-
-Maven reads `pom.xml` to understand:
-
-- Dependencies
-- Plugins
-- Configurations
-- Build lifecycle
-
-> **Interview line:** Maven is highly dependent on `pom.xml`.
-
----
-
-## 5. Important Elements in pom.xml
-
-### `project` — Root element
-
-```xml
-<project>
-    <!-- all configuration -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>
 ```
 
-### `groupId`
+| Coordinate | Meaning | Example |
+|------------|---------|---------|
+| **groupId** | Organization or group (like a package prefix) | `com.company` |
+| **artifactId** | Unique project/module name | `learningspringboot` |
+| **version** | Release version; `-SNAPSHOT` = work in progress | `0.0.1-SNAPSHOT` |
 
-Usually company / package name.
+**Super POM:** Every `pom.xml` implicitly inherits from Maven's built-in **Super POM**, which defines default directories (`src/main/java`), default plugin versions, and Central repository URL. Your project's POM + parent POM + Super POM merge into the **effective POM**.
 
-```xml
-<groupId>com.example</groupId>
-```
-
-### `artifactId`
-
-Project name.
-
-```xml
-<artifactId>user-service</artifactId>
-```
-
-### `version`
-
-```xml
-<version>1.0.0</version>
-```
-
-**Coordinates:** `groupId` + `artifactId` + `version` uniquely identify a project:
-
-```
-com.example:user-service:1.0.0
-```
-
-### `packaging`
-
-```xml
-<packaging>jar</packaging>
-```
-
-Possible values: `jar`, `war`, `pom`, etc.
-
-### `dependencies`
-
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
-</dependency>
-```
-
-### `properties`
-
-Reusable variables for centralized version management.
-
-```xml
-<properties>
-    <java.version>17</java.version>
-</properties>
-```
-
-Usage: `${java.version}`
-
-**Why use properties?** Reusability, centralized versions, easier maintenance.
+**Parent POM:** A shared `pom.xml` (often in a company or Spring Boot) that child modules inherit from — centralizes plugin versions, dependency management, and build config.
 
 ---
 
-## 6. Parent POM & Super POM
+## 4. settings.xml & Repositories
 
-### Parent POM
+### Maven Repository Types
+
+| Type | Location | Purpose |
+|------|----------|---------|
+| **Local** | `~/.m2/repository` | Cache of downloaded artifacts on your machine |
+| **Central** | repo.maven.apache.org | Public Maven Central (default remote) |
+| **Remote / Company** | Nexus, Artifactory | Private or mirror repos inside organizations |
+
+### settings.xml
+
+Lives at `~/.m2/settings.xml` (user-level) or `$MAVEN_HOME/conf/settings.xml` (global). Used for:
+
+- Server credentials (for `deploy`)
+- Mirror configuration
+- Local repository path override
+- Active profiles
 
 ```xml
-<parent>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.2.0</version>
-</parent>
+<settings>
+    <servers>
+        <server>
+            <id>company-repo</id>
+            <username>admin</username>
+            <password>${env.REPO_PASSWORD}</password>
+        </server>
+    </servers>
+
+    <mirrors>
+        <mirror>
+            <id>company-mirror</id>
+            <url>https://nexus.company.com/repository/maven-public/</url>
+            <mirrorOf>central</mirrorOf>
+        </mirror>
+    </mirrors>
+</settings>
 ```
 
-Child project **inherits**:
-
-- Dependencies (versions)
-- Plugin configurations
-- Properties
-
-### Super POM
-
-Every Maven POM internally inherits from the **Super POM** provided by Maven itself.
-
-Contains:
-
-- Default plugin configuration
-- Default repositories
-- Default build settings
+> The `<server><id>` must **match** the `<repository><id>` in `pom.xml` `distributionManagement`.
 
 ---
 
-## 7. Maven Repositories
+## 5. Maven Lifecycle
 
-Repositories store dependencies (JARs).
+Maven has **three built-in lifecycles**. The most used is the **default lifecycle** (project build):
 
-### Local Repository
-
-**Path:** `~/.m2/repository`
-
-**Purpose:** Cache downloaded JARs locally.
-
-### Remote Repository
-
-Examples:
-
-- Maven Central
-- Company Nexus
-- JFrog Artifactory
-
-### Dependency Resolution Flow
-
-```
-1. Check local repository (~/.m2/repository)
-2. If not found → download from remote repository
-3. Cache in local repository
-```
-
----
-
-## 8. Maven Build Lifecycle
-
-> **Most asked interview topic.**
-
-### Core Lifecycle Phases
-
-```
+```text
 validate → compile → test → package → verify → install → deploy
 ```
 
-### Important Concept
+| Phase | What happens |
+|-------|--------------|
+| **validate** | Checks POM and project structure are valid |
+| **compile** | Compiles `src/main/java` → `target/classes` |
+| **test** | Compiles and runs unit tests (`src/test/java`) |
+| **package** | Creates JAR/WAR (e.g. `target/app.jar`) |
+| **verify** | Runs integration tests and quality checks |
+| **install** | Copies artifact to **local** repo (`~/.m2/repository`) |
+| **deploy** | Uploads artifact to **remote** repo (Nexus / Artifactory) |
 
-Lifecycle phases are **sequential**. If you run:
+### Common Commands
 
 ```bash
-mvn package
+mvn clean              # Delete target/ (clean plugin goal)
+mvn compile            # Runs validate + compile
+mvn test               # Runs up through test
+mvn package            # Runs up through package → produces JAR
+mvn install            # Runs up through install → local ~/.m2
+mvn deploy             # Runs full lifecycle including deploy
+mvn clean package -DskipTests   # Build JAR, skip tests
+./mvnw spring-boot:run          # Run app via Maven Wrapper (no global Maven install)
 ```
 
-Maven automatically runs: `validate` → `compile` → `test` → `package`
+### package vs install vs deploy
 
-### Phase-by-Phase
+| Command | Output location | Use case |
+|---------|-----------------|----------|
+| `package` | `target/` only | CI build, run `java -jar` locally |
+| `install` | `target/` + local `~/.m2` | Multi-module: other modules on same machine depend on this |
+| `deploy` | Remote Nexus/Artifactory | Share artifact with team / production pipeline |
 
-| Phase | Command | What happens | Output |
-|-------|---------|----------------|--------|
-| **validate** | `mvn validate` | Checks project structure and POM | — |
-| **compile** | `mvn compile` | `.java` → `.class` via compiler plugin | `target/classes` |
-| **test** | `mvn test` | Runs unit tests (JUnit via surefire) | Test reports |
-| **package** | `mvn package` | Creates JAR / WAR | `target/app.jar` |
-| **verify** | `mvn verify` | Integration / quality checks (PMD, Checkstyle) | — |
-| **install** | `mvn install` | Copies artifact to local repo | `~/.m2/repository` |
-| **deploy** | `mvn deploy` | Uploads to remote repo (CI/CD, Nexus) | Remote repo |
+**Why previous phases run automatically:** Maven binds **plugin goals** to lifecycle phases. Running `package` must compile and test first — phases are **sequential and cumulative**.
 
-### compile vs package
+### Phase vs Goal
 
-| compile | package |
-|---------|---------|
-| Generates `.class` files | Generates JAR / WAR |
-| No distributable artifact | Creates deployable artifact |
+| Concept | Definition |
+|---------|------------|
+| **Phase** | A step in the lifecycle (e.g. `compile`) |
+| **Goal** | A specific task a plugin performs (e.g. `compiler:compile`, `surefire:test`) |
 
-### package vs install
-
-| package | install |
-|---------|---------|
-| Creates JAR in `target/` | Stores JAR in local `~/.m2/repository` |
-
-### install vs deploy
-
-| install | deploy |
-|---------|--------|
-| Local repository | Remote repository (team / CI) |
-
-### What happens during compile?
-
-Maven uses **maven-compiler-plugin**, runs `javac` internally, and generates bytecode.
-
-### Which plugin runs unit tests?
-
-**maven-surefire-plugin**
+A phase may run zero or more goals. Some goals are bound to phases by default; you can also invoke goals directly: `mvn dependency:tree`.
 
 ---
 
-## 9. Maven Plugins
+## 6. Deploy Phase Deep Dive
 
-Maven works using **plugins**. Lifecycle phases themselves do not do work — **plugins perform the actual work**.
+**Purpose:** Upload the built artifact (JAR/WAR/POM) to a **remote repository** so other projects or environments can consume it.
+
+**Typical targets:** Nexus, JFrog Artifactory, Maven Central (for open-source releases).
+
+### Requires: distributionManagement in pom.xml
 
 ```xml
-<plugin>
-    <groupId>org.apache.maven.plugins</groupId>
-    <artifactId>maven-compiler-plugin</artifactId>
-</plugin>
+<distributionManagement>
+    <repository>
+        <id>company-repo</id>
+        <url>https://repo.company.com/releases</url>
+    </repository>
+    <snapshotRepository>
+        <id>company-snapshots</id>
+        <url>https://repo.company.com/snapshots</url>
+    </snapshotRepository>
+</distributionManagement>
 ```
 
-**Maven Plugin** = reusable component that performs specific build tasks.
-
----
-
-## 10. Goals
-
-A **Goal** is a specific task performed by a plugin.
-
-```
-compiler:compile
-   ↑         ↑
- plugin    goal
-```
-
-### Lifecycle Phase vs Goal
-
-| Lifecycle Phase | Goal |
-|-----------------|------|
-| High-level stage | Specific task |
-
-Example: `package` phase binds to `jar:jar` goal.
-
----
-
-## 11. Build Section
-
-Custom build configurations in `pom.xml`:
+### Requires: matching credentials in settings.xml
 
 ```xml
-<build>
-    <plugins>
-        <!-- add and configure plugins -->
-    </plugins>
-</build>
+<servers>
+    <server>
+        <id>company-repo</id>
+        <username>admin</username>
+        <password>password</password>
+    </server>
+    <server>
+        <id>company-snapshots</id>
+        <username>admin</username>
+        <password>password</password>
+    </server>
+</servers>
 ```
 
-Used to: add plugins, configure plugins, customize lifecycle behavior.
+```bash
+mvn clean deploy
+```
+
+Flow: `package` creates artifact → `install` puts in local repo → `deploy` plugin uploads to remote URL defined in `distributionManagement`.
 
 ---
 
-## 12. Common Maven Plugins
-
-| Plugin | Purpose |
-|--------|---------|
-| `maven-compiler-plugin` | Compile Java source |
-| `maven-surefire-plugin` | Run unit tests |
-| `maven-jar-plugin` | Create JAR |
-| `spring-boot-maven-plugin` | Spring Boot fat JAR packaging |
-| `maven-checkstyle-plugin` | Code style checks |
-| `maven-pmd-plugin` | Static analysis |
-
----
-
-## 13. Dependency Scopes
-
-| Scope | When available | Included in JAR? | Example |
-|-------|----------------|------------------|---------|
-| **compile** (default) | Compile + test + runtime | Yes | Spring, Jackson |
-| **test** | Test only | No | JUnit, Mockito |
-| **provided** | Compile + test; runtime supplied elsewhere | No | `servlet-api` (Tomcat provides) |
-| **runtime** | Test + runtime only | Yes | JDBC driver |
-
-### compile vs provided
-
-| compile | provided |
-|---------|----------|
-| Included in final JAR | Not included in final JAR |
-| Needed at runtime | Container provides at runtime |
+## 7. Dependencies & Scopes
 
 ```xml
 <dependency>
-    <groupId>junit</groupId>
-    <artifactId>junit</artifactId>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-test</artifactId>
     <scope>test</scope>
 </dependency>
 ```
 
----
+| Scope | Classpath | Typical use |
+|-------|-----------|-------------|
+| **compile** (default) | compile, test, runtime | Most app dependencies |
+| **provided** | compile, test only | Servlet API — container provides at runtime |
+| **runtime** | test, runtime only | JDBC driver |
+| **test** | test only | JUnit, Mockito |
+| **import** | POM only | BOM imports in `dependencyManagement` |
 
-## 14. Maven Commands
+**Transitive dependency:** If A depends on B, and B depends on C, your project gets C automatically without declaring it.
 
-| Command | Purpose |
-|---------|---------|
-| `mvn clean` | Delete `target/` folder |
-| `mvn compile` | Compile source code |
-| `mvn test` | Run unit tests |
-| `mvn package` | Create JAR / WAR |
-| `mvn install` | Install to local repository |
-| `mvn deploy` | Deploy to remote repository |
-| `mvn dependency:tree` | Show dependency tree |
+**Dependency conflict:** Two libraries pull different versions of the same artifact (e.g. Guava 28 vs 31).
 
-### `mvn clean`
-
-Deletes `target/` — ensures a **fresh build** with no stale artifacts.
-
-### Skip tests
+**Maven resolution (nearest-wins):** Shortest path in the dependency tree wins. You can override with explicit `<dependency>` or `<dependencyManagement>` in parent POM.
 
 ```bash
-mvn install -DskipTests
+mvn dependency:tree          # Visualize transitive deps
+mvn dependency:tree -Dverbose  # Show conflict resolution
 ```
 
-### Force update dependencies
+---
+
+## 8. Spring Boot Maven Specifics
+
+### spring-boot-starter-parent
+
+Parent POM that provides:
+
+- Default Java version and encoding
+- **Dependency management** — omit version numbers on Spring starters
+- Plugin configuration (compiler, surefire, jar)
+- Resource filtering for `application.properties`
+
+### spring-boot-maven-plugin
+
+Repackages the normal JAR into an **executable fat JAR (über-JAR)**:
+
+```xml
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+        </plugin>
+    </plugins>
+</build>
+```
+
+| JAR type | Contents | Run |
+|----------|----------|-----|
+| **Thin JAR** | Your classes only | Needs classpath with all deps |
+| **Fat / executable JAR** | Your classes + all dependencies + embedded Tomcat | `java -jar app.jar` |
+
+**How Tomcat gets inside the JAR:** `spring-boot-starter-web` brings embedded Tomcat as a dependency. The repackage goal nests dependency JARs inside `BOOT-INF/lib/` and uses `JarLauncher` as the main entry point — no external Tomcat install needed.
+
+### Maven Wrapper (`.mvn/`, `mvnw`)
+
+Ensures everyone uses the **same Maven version** without installing Maven globally:
 
 ```bash
-mvn clean install -U
-```
-
----
-
-## 15. Clean Lifecycle
-
-Separate lifecycle from default:
-
-```
-pre-clean → clean → post-clean
-```
-
-`mvn clean` runs the **clean** phase and removes `target/`.
-
----
-
-## 16. Maven Dependency Tree
-
-```bash
-mvn dependency:tree
-```
-
-Used to debug dependency conflicts and visualize transitive dependencies.
-
-### Transitive Dependency
-
-A **dependency of a dependency**.
-
-```
-A → B → C
-```
-
-If A depends on B, and B depends on C, then A indirectly gets C.
-
----
-
-## 17. SNAPSHOT vs Release Version
-
-### SNAPSHOT
-
-```xml
-<version>1.0-SNAPSHOT</version>
-```
-
-- Under active development
-- **Mutable** — can be overwritten on each build
-
-### Release
-
-```xml
-<version>1.0.0</version>
-```
-
-- Stable, immutable release
-- Should not change once published
-
----
-
-## 18. Maven vs Gradle
-
-| Feature | Maven | Gradle |
-|---------|-------|--------|
-| Config format | XML (`pom.xml`) | Groovy / Kotlin DSL |
-| Philosophy | Convention over configuration | Flexible |
-| Build speed | Slower | Faster (incremental) |
-| Learning curve | Easier | Steeper |
-| Customization | Structured | Highly customizable |
-
----
-
-## 19. Spring Boot Maven Plugin
-
-```xml
-<plugin>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-maven-plugin</artifactId>
-</plugin>
-```
-
-Used for:
-
-- **Executable fat JAR** (all dependencies bundled)
-- Embedded Tomcat packaging
-- `java -jar app.jar` runnable artifact
-
-### Fat JAR
-
-Spring Boot creates an executable JAR containing your code + all dependencies + embedded server.
-
----
-
-## 20. Advanced Topics
-
-### Dependency Mediation
-
-When multiple versions of the same library exist:
-
-```
-A → B → log4j 1.0
-A → C → log4j 2.0
-```
-
-Maven chooses the **nearest** dependency in the tree (shortest path wins).
-
-### Excluding a Dependency
-
-```xml
-<dependency>
-    <groupId>some.group</groupId>
-    <artifactId>some-artifact</artifactId>
-    <exclusions>
-        <exclusion>
-            <groupId>unwanted.group</groupId>
-            <artifactId>unwanted-artifact</artifactId>
-        </exclusion>
-    </exclusions>
-</dependency>
-```
-
-### Multi-module Projects
-
-Parent POM manages multiple child modules — common in microservices monorepos.
-
-```xml
-<modules>
-    <module>user-service</module>
-    <module>order-service</module>
-</modules>
+./mvnw clean package
 ```
 
 ### Profiles
 
-Environment-specific configuration:
+Environment-specific config in `pom.xml` or `settings.xml`:
 
 ```xml
 <profiles>
     <profile>
         <id>dev</id>
         <properties>
-            <env>development</env>
-        </properties>
-    </profile>
-    <profile>
-        <id>prod</id>
-        <properties>
-            <env>production</env>
+            <spring.profiles.active>dev</spring.profiles.active>
         </properties>
     </profile>
 </profiles>
 ```
 
-Activate: `mvn package -Pprod`
-
-### Maven Wrapper (`mvnw`)
-
-Ensures the **same Maven version** across all developers and CI — no local Maven install required.
-
 ```bash
-./mvnw clean package
-```
-
-### How Maven Works Internally
-
-```
-mvn command
-    ↓
-Read pom.xml (+ parent + Super POM)
-    ↓
-Resolve dependencies (local → remote)
-    ↓
-Execute lifecycle phases
-    ↓
-Bind and execute plugin goals
-    ↓
-Generate artifact in target/
+mvn clean package -Pdev
 ```
 
 ---
 
-## 21. Final Mental Model
-
-| Concept | Role |
-|---------|------|
-| `pom.xml` | Configuration |
-| Repository | Dependency storage |
-| Lifecycle | Build stages |
-| Plugin | Actual worker |
-| Goal | Specific task |
-
-### One-Line Interview Summary
-
-> Maven is a convention-based project management and build automation tool that manages dependencies, standardizes project structure, and automates the software build lifecycle using plugins and POM configuration.
-
----
-
-## 22. Interview Questions Index
-
-All questions link to the section where the answer is explained in detail.
+## 9. Interview Questions & Answers
 
 ### Basic
 
-| # | Question | Answer in section |
-|---|----------|-------------------|
-| Q1 | [What is Maven?](#1-what-is-maven) | [§1 What is Maven?](#1-what-is-maven) |
-| Q2 | [Why is Maven used?](#2-why-maven-came-into-picture-ant-vs-maven) | [§2 ANT vs Maven](#2-why-maven-came-into-picture-ant-vs-maven) |
-| Q3 | [What is POM?](#4-what-is-pomxml) | [§4 pom.xml](#4-what-is-pomxml) |
-| Q4 | [What is the Maven lifecycle?](#8-maven-build-lifecycle) | [§8 Build Lifecycle](#8-maven-build-lifecycle) |
-| Q5 | [Difference between install and deploy?](#8-maven-build-lifecycle) | [§8 — install vs deploy](#8-maven-build-lifecycle) |
-| Q6 | [Difference between package and install?](#8-maven-build-lifecycle) | [§8 — package vs install](#8-maven-build-lifecycle) |
-| Q7 | [What is the local repository?](#7-maven-repositories) | [§7 Repositories — Local](#7-maven-repositories) |
-| Q8 | [What is dependency scope?](#13-dependency-scopes) | [§13 Dependency Scopes](#13-dependency-scopes) |
+**1. What is Maven?**  
+A build automation and dependency management tool for Java. It uses a declarative `pom.xml`, standard directory layout, and a fixed lifecycle.
 
-### Intermediate
+**2. Why do we need Maven?**  
+Centralized dependency resolution, reproducible builds, convention over configuration, and plugins for compile/test/package/deploy — no manual JAR hunting.
 
-| # | Question | Answer in section |
-|---|----------|-------------------|
-| Q9 | [What is a transitive dependency?](#16-maven-dependency-tree) | [§16 Dependency Tree](#16-maven-dependency-tree) |
-| Q10 | [What is a Maven plugin?](#9-maven-plugins) | [§9 Maven Plugins](#9-maven-plugins) |
-| Q11 | [What is a goal?](#10-goals) | [§10 Goals](#10-goals) |
-| Q12 | [What is a parent POM?](#6-parent-pom--super-pom) | [§6 Parent POM](#6-parent-pom--super-pom) |
-| Q13 | [What is Super POM?](#6-parent-pom--super-pom) | [§6 Super POM](#6-parent-pom--super-pom) |
-| Q14 | [What is dependency mediation?](#20-advanced-topics) | [§20 — Dependency Mediation](#20-advanced-topics) |
-| Q15 | [What is SNAPSHOT?](#17-snapshot-vs-release-version) | [§17 SNAPSHOT vs Release](#17-snapshot-vs-release-version) |
-| Q16 | [Difference between ANT and Maven?](#2-why-maven-came-into-picture-ant-vs-maven) | [§2 ANT vs Maven table](#2-why-maven-came-into-picture-ant-vs-maven) |
-| Q17 | [What is the target folder?](#3-maven-project-structure) | [§3 — target folder](#3-maven-project-structure) |
-| Q18 | [Why use properties in pom.xml?](#5-important-elements-in-pomxml) | [§5 — properties](#5-important-elements-in-pomxml) |
-| Q19 | [groupId + artifactId + version?](#5-important-elements-in-pomxml) | [§5 — coordinates](#5-important-elements-in-pomxml) |
-| Q20 | [Difference between compile and package?](#8-maven-build-lifecycle) | [§8 — compile vs package](#8-maven-build-lifecycle) |
-| Q21 | [What happens during compile phase?](#8-maven-build-lifecycle) | [§8 — compile phase](#8-maven-build-lifecycle) |
-| Q22 | [Which plugin runs unit tests?](#8-maven-build-lifecycle) | [§8 — surefire plugin](#8-maven-build-lifecycle) |
-| Q23 | [Difference between compile and provided scope?](#13-dependency-scopes) | [§13 — compile vs provided](#13-dependency-scopes) |
-| Q24 | [Where does Maven store dependencies?](#7-maven-repositories) | [§7 — ~/.m2/repository](#7-maven-repositories) |
+**3. What is pom.xml?**  
+Project Object Model — XML describing project coordinates (`groupId`, `artifactId`, `version`), dependencies, plugins, profiles, and build config.
 
-### Advanced
+**4. What is settings.xml?**  
+User- or machine-level Maven config: credentials, mirrors, local repo path, active profiles. Not committed to the project (usually `~/.m2/settings.xml`).
 
-| # | Question | Answer in section |
-|---|----------|-------------------|
-| Q25 | [How does Maven resolve dependency conflicts?](#20-advanced-topics) | [§20 — Dependency Mediation](#20-advanced-topics) |
-| Q26 | [How to skip tests?](#14-maven-commands) | [§14 — `-DskipTests`](#14-maven-commands) |
-| Q27 | [How to force update dependencies?](#14-maven-commands) | [§14 — `-U` flag](#14-maven-commands) |
-| Q28 | [How does Maven work internally?](#20-advanced-topics) | [§20 — Internal flow](#20-advanced-topics) |
-| Q29 | [How to exclude a dependency?](#20-advanced-topics) | [§20 — Exclusions](#20-advanced-topics) |
-| Q30 | [What are multi-module projects?](#20-advanced-topics) | [§20 — Multi-module](#20-advanced-topics) |
-| Q31 | [What are Maven profiles?](#20-advanced-topics) | [§20 — Profiles](#20-advanced-topics) |
-| Q32 | [What is Maven Wrapper (mvnw)?](#20-advanced-topics) | [§20 — Maven Wrapper](#20-advanced-topics) |
-| Q33 | [Maven vs Gradle?](#18-maven-vs-gradle) | [§18 Maven vs Gradle](#18-maven-vs-gradle) |
-| Q34 | [What is Spring Boot Maven plugin for?](#19-spring-boot-maven-plugin) | [§19 Spring Boot Plugin](#19-spring-boot-maven-plugin) |
-| Q35 | [What is a fat JAR?](#19-spring-boot-maven-plugin) | [§19 — Fat JAR](#19-spring-boot-maven-plugin) |
-| Q36 | [Lifecycle phase vs goal?](#10-goals) | [§10 Goals](#10-goals) |
-| Q37 | [What does `mvn clean` do?](#14-maven-commands) | [§14 — mvn clean](#14-maven-commands) · [§15 Clean Lifecycle](#15-clean-lifecycle) |
-| Q38 | [What is `mvn dependency:tree` for?](#16-maven-dependency-tree) | [§16 Dependency Tree](#16-maven-dependency-tree) |
+**5. What is a Maven Repository?**  
+Storage for artifacts (JARs). Local (`~/.m2`), Central (public), or remote (Nexus/Artifactory).
 
-### Quick revision checklist
+**6. What is Super POM?**  
+The implicit parent of every POM. Defines defaults: directory structure, Central repo, core plugin versions. Merged into the **effective POM**.
 
-- [ ] Can explain lifecycle order: validate → … → deploy → [§8](#8-maven-build-lifecycle)
-- [ ] Know package vs install vs deploy differences → [§8](#8-maven-build-lifecycle)
-- [ ] Know all dependency scopes → [§13](#13-dependency-scopes)
-- [ ] Can draw dependency resolution flow → [§7](#7-maven-repositories)
-- [ ] Know plugin vs goal vs lifecycle phase → [§8](#8-maven-build-lifecycle), [§9](#9-maven-plugins), [§10](#10-goals)
+**7. Difference between Maven and Ant?**  
+Ant: imperative, task-based, no dependency management. Maven: declarative, lifecycle-driven, built-in dependency resolution and standard layout.
+
+**8. What is groupId?**  
+Organization identifier (reverse domain), e.g. `com.company`. Groups related projects.
+
+**9. What is artifactId?**  
+Unique project/module name, e.g. `learningspringboot`.
+
+**10. What is version?**  
+Release identifier. `-SNAPSHOT` = mutable dev builds; release versions are immutable once deployed.
 
 ---
 
-*End of document*
+### Lifecycle
+
+**11. Explain Maven Lifecycle.**  
+Three lifecycles: **default** (build), **clean** (remove artifacts), **site** (docs). Default: `validate → compile → test → package → verify → install → deploy`.
+
+**12. What happens during compile phase?**  
+`compiler:compile` runs — Java sources in `src/main/java` compiled to `target/classes`.
+
+**13. What happens during package phase?**  
+JAR/WAR assembled from compiled classes and resources. With Spring Boot plugin, repackage creates executable fat JAR.
+
+**14. What is verify phase?**  
+Integration tests and quality checks (e.g. failsafe plugin) run before install/deploy.
+
+**15. Difference between package and install?**  
+`package` leaves artifact in `target/`. `install` also copies it to local Maven repo (`~/.m2`) for other local projects.
+
+**16. Difference between install and deploy?**  
+`install` → local repo only. `deploy` → remote repo (Nexus/Artifactory) for team/CI consumption.
+
+**17. Why does Maven execute previous phases automatically?**  
+Phases are ordered; each builds on the last. Running `package` requires compiled, tested code — Maven runs all prior phases in the lifecycle.
+
+---
+
+### Dependencies
+
+**18. What are dependency scopes?**  
+Control classpath visibility: `compile` (default), `provided`, `runtime`, `test`, `import` (BOM).
+
+**19. What is transitive dependency?**  
+Indirect dependency — A → B → C means C is on your classpath even if you didn't declare it.
+
+**20. What is dependency conflict?**  
+Two deps require different versions of the same library.
+
+**21. How does Maven resolve conflicts?**  
+**Nearest definition wins** (shortest path in tree). Override with explicit version or `dependencyManagement`.
+
+**22. What is dependency:tree?**  
+Maven plugin goal printing the full dependency hierarchy: `mvn dependency:tree`.
+
+---
+
+### Spring Boot Specific
+
+**23. Why is spring-boot-starter-parent used?**  
+Inherits managed dependency versions, Java/compiler settings, and plugin config — less boilerplate in `pom.xml`.
+
+**24. What is spring-boot-maven-plugin?**  
+Repackages application into executable fat JAR and supports `spring-boot:run` for local dev.
+
+**25. What is a fat jar?**  
+Über-JAR containing application classes + all dependency JARs + embedded server libs in one file.
+
+**26. What is executable jar?**  
+JAR with `Main-Class` (Spring Boot uses `JarLauncher`) runnable via `java -jar app.jar`.
+
+**27. How does Spring Boot package Tomcat inside jar?**  
+`spring-boot-starter-web` pulls embedded Tomcat; repackage goal puts it in `BOOT-INF/lib/` inside the fat JAR.
+
+---
+
+### Advanced
+
+**28. What is Parent POM?**  
+Shared POM that child modules extend via `<parent>` — DRY for versions, plugins, and dependency management.
+
+**29. What are Profiles?**  
+Conditional build/config blocks activated by `-P`, OS, JDK, or property — e.g. dev vs prod settings.
+
+**30. What is Maven Wrapper?**  
+Scripts (`mvnw`, `mvnw.cmd`) + `.mvn/wrapper` that download a pinned Maven version — consistent builds without global install.
+
+**31. What are Plugins?**  
+Extend Maven with goals (compiler, surefire, spring-boot, deploy). Bound to lifecycle phases or invoked directly.
+
+**32. What are Goals?**  
+Specific tasks: `compiler:compile`, `surefire:test`, `jar:jar`. Format: `plugin:goal`.
+
+**33. Lifecycle Phase vs Goal?**  
+Phase = lifecycle step (abstract). Goal = concrete work by a plugin. Phases bind goals; you can run goals standalone.
+
+**34. How does Maven work internally?**  
+Reads POM → merges with parent + Super POM → resolves dependencies from repos → executes lifecycle phases → runs bound plugin goals → writes output to `target/`.
+
+**35. (Bonus) What is dependencyManagement vs dependencies?**  
+`dependencies` — adds to classpath. `dependencyManagement` (often in parent/BOM) — pins versions only; child must still declare artifact without version.
+
+---
+
+## One-Page Revision Card
+
+| Topic | Remember |
+|-------|----------|
+| **Coordinates** | `groupId` + `artifactId` + `version` = unique artifact |
+| **Layout** | `src/main/java`, `src/main/resources`, `src/test/java` |
+| **Lifecycle** | `compile → test → package → install → deploy` |
+| **package** | JAR in `target/` |
+| **install** | JAR in `~/.m2/repository` |
+| **deploy** | Upload to Nexus/Artifactory |
+| **Scopes** | compile, provided, runtime, test |
+| **Conflict** | Nearest-wins; use `dependency:tree` |
+| **Fat JAR** | `spring-boot-maven-plugin` repackage |
+| **Wrapper** | `./mvnw` — no global Maven needed |
+
+---
+
+*End of Maven guide — use with [Project Structure](../2.%20Create_Project/Project_File_Folder_Structure.md) and [Spring Boot Intro](../1.%20Into/Introduction_to_spring_boot.md).*
